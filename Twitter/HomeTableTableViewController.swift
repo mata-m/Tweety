@@ -12,6 +12,8 @@ import AlamofireImage
 class HomeTableTableViewController: UITableViewController {
     
     var tweetArray = [NSDictionary]()
+    var userInfo = NSDictionary()
+    var userBanner = NSDictionary()
     var numberOfTweets = 0
     
     
@@ -34,12 +36,24 @@ class HomeTableTableViewController: UITableViewController {
         tableView.refreshControl = myRefreshControl
         
         
-        
    }
    
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         loadTweets()
+        
+        // Grabbing userInfo for later call
+        let profileURL = "https://api.twitter.com/1.1/account/verify_credentials.json"
+        TwitterAPICaller.client?.getDictionaryRequest(url: profileURL, parameters: [:], success: { UserInfo in
+            self.userInfo = UserInfo
+            // Passing userInfo to adjacent tab view controller
+            // I don't think this is a good practice for doing so but it works for now
+            let secondTab = self.tabBarController?.viewControllers?[1] as! UINavigationController
+            let secondController = secondTab.topViewController as! ProfileViewController
+            secondController.userInfo = UserInfo
+        }, failure: { error in
+            print("Error grabbing user profile image: \(error)")
+        })
         
         
     }
@@ -65,7 +79,7 @@ class HomeTableTableViewController: UITableViewController {
         
         let myURL = "https://api.twitter.com/1.1/statuses/home_timeline.json"
         numberOfTweets = numberOfTweets + 20
-        let myParams = ["count": numberOfTweets]
+        let myParams = ["count": numberOfTweets, "include_entities": true] as [String : Any]
         TwitterAPICaller.client?.getDictionariesRequest(url: myURL, parameters: myParams, success: { tweets in
             
             self.tweetArray.removeAll()
@@ -91,11 +105,34 @@ class HomeTableTableViewController: UITableViewController {
         let cell = tableView.dequeueReusableCell(withIdentifier: "TweetCell", for: indexPath) as! TweetCell
         let user = tweetArray[indexPath.row]["user"] as! NSDictionary
         
+        
         var profileImageUrlString = user["profile_image_url"] as! String
         profileImageUrlString = profileImageUrlString.replacingOccurrences(of: "normal", with: "bigger")
         
         let profileImageURL = URL(string: profileImageUrlString)!
         var tweetContent = (tweetArray[indexPath.row]["text"] as! String)
+        let extended_entities = (tweetArray[indexPath.row]["extended_entities"] as? NSDictionary )
+        let mediaObject = extended_entities?["media"] as? NSArray
+        if (mediaObject != nil) {
+            let mediaUrlString = (mediaObject?[0] as? NSDictionary)?["media_url_https"]
+            if (mediaUrlString != nil) {
+
+                var moddedString = (mediaUrlString as! String).replacingOccurrences(of: ".jpg", with: "")
+                moddedString = moddedString + "?format=jpg&name=small"
+                let mediaURL = URL(string: moddedString)
+                
+                cell.mediaImageView.af_setImage(withURL: mediaURL!)
+                cell.mediaImageView.layer.borderWidth = 3.0
+                cell.mediaImageView.layer.masksToBounds = false
+                cell.mediaImageView.layer.borderColor = #colorLiteral(red: 0, green: 0.6784657836, blue: 0.9941992164, alpha: 1)
+                cell.mediaImageView.layer.cornerRadius = 10.0
+                cell.mediaImageView.clipsToBounds = true
+            }
+        } else {
+            cell.mediaImageView.image = nil
+        }
+
+        
         tweetContent = tweetContent.replacingOccurrences(of: "&amp;", with: "&")
         
         cell.profileImageView.af_setImage(withURL: profileImageURL)
@@ -113,11 +150,12 @@ class HomeTableTableViewController: UITableViewController {
         cell.profileImageView.layer.cornerRadius = cell.profileImageView.frame.size.width/2
         cell.profileImageView.clipsToBounds = true
         
+        // Grabbing and formatting timestamp
         let createdDate = createDate(from: (tweetArray[indexPath.row]["created_at"] as? String)!)
         let formatter = RelativeDateTimeFormatter()
         formatter.dateTimeStyle = .named
-        cell.timestampLabel.text = formatter.localizedString(for: createdDate, relativeTo: Date())
         
+        cell.timestampLabel.text = formatter.localizedString(for: createdDate, relativeTo: Date())
         cell.tweetId = tweetArray[indexPath.row]["id"] as! Int
         cell.retweeted = tweetArray[indexPath.row]["retweeted"] as! Bool
         cell.setRetweeted(tweetArray[indexPath.row]["retweeted"] as! Bool)
@@ -147,7 +185,6 @@ class HomeTableTableViewController: UITableViewController {
     // MARK: - Table view data source
 
     override func numberOfSections(in tableView: UITableView) -> Int {
-        // #warning Incomplete implementation, return the number of sections
         return 1
     }
 
@@ -155,18 +192,5 @@ class HomeTableTableViewController: UITableViewController {
         return tweetArray.count
     }
 
-    
-
-    
-    // MARK: - Navigation
-/*
-    // In a storyboard-based application, you will often want to do a little preparation before navigation
-    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
-        // Get the new view controller using segue.destination.
-        let destination = segue.destination as! TweetViewController
-        // Pass the selected object to the new view controller.
-        
-    }
-  */
-
 }
+

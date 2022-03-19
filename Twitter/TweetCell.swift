@@ -18,6 +18,7 @@ class TweetCell: UITableViewCell {
     @IBOutlet weak var screenNameLabel: UILabel!
     @IBOutlet weak var retweetCountLabel: UILabel!
     @IBOutlet weak var favoriteCountLabel: UILabel!
+    @IBOutlet weak var mediaImageView: UIImageView!
     
     var favorited:Bool = false
     var retweeted:Bool = false

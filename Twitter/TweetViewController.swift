@@ -9,11 +9,12 @@
 import UIKit
 import AlamofireImage
 
-class TweetViewController: UIViewController {
+class TweetViewController: UIViewController, UITextViewDelegate {
 
     var profileImageURL = ""
     @IBOutlet weak var profileImageView: UIImageView!
     @IBOutlet weak var tweetTextView: UITextView!
+    @IBOutlet weak var tweetCharCountLabel: UILabel!
     @IBAction func cancelTweet(_ sender: Any) {
         dismiss(animated: true, completion: nil)
     }
@@ -32,16 +33,32 @@ class TweetViewController: UIViewController {
         }
     }
     
+    @objc(textView:shouldChangeTextInRange:replacementText:) func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool{
+        
+        // Set the max character limit
+        let characterLimit = 280
+
+        // Construct what the new text would be if we allowed the user's latest edit
+        let newText = NSString(string: textView.text!).replacingCharacters(in: range, with: text)
+
+        // Update Character Count Label
+        tweetCharCountLabel.text = String(newText.count)
+        tweetCharCountLabel.textColor = newText.count >= characterLimit ? #colorLiteral(red: 0.8078431487, green: 0.02745098062, blue: 0.3333333433, alpha: 1) : #colorLiteral(red: 0.3333333433, green: 0.3333333433, blue: 0.3333333433, alpha: 1)
+
+        // The new text should be allowed? True/False
+        return newText.count < characterLimit
+    }
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         let appearance = UINavigationBarAppearance()
-        let currURL = "https://api.twitter.com/1.1/account/verify_credentials.json"
+        let profileURL = "https://api.twitter.com/1.1/account/verify_credentials.json"
         
         appearance.titleTextAttributes = [.foregroundColor: #colorLiteral(red: 1, green: 1, blue: 1, alpha: 1)]
         appearance.largeTitleTextAttributes = [.foregroundColor: #colorLiteral(red: 1, green: 1, blue: 1, alpha: 1)]
         appearance.backgroundColor = #colorLiteral(red: 0, green: 0.6784657836, blue: 0.9941992164, alpha: 1)
         
-        
+        tweetTextView.delegate = self
 
         navigationItem.standardAppearance = appearance
         navigationItem.scrollEdgeAppearance = appearance
@@ -53,7 +70,7 @@ class TweetViewController: UIViewController {
         
         
         
-        TwitterAPICaller.client?.getDictionaryRequest(url: currURL, parameters: [:], success: { UserInfo in
+        TwitterAPICaller.client?.getDictionaryRequest(url: profileURL, parameters: [:], success: { UserInfo in
             self.profileImageView.af_setImage(withURL:
                                             URL(string: UserInfo["profile_image_url_https"] as! String)! // would need a default image in case image url was down)
                                               )
