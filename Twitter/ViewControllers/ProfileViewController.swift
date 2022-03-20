@@ -42,16 +42,7 @@ class ProfileViewController: UIViewController, UITableViewDelegate, UITableViewD
         let profileImageUrlString:String = (userInfo["profile_image_url_https"] as! String).replacingOccurrences(of: "normal", with: "bigger")
         self.profileImageView.af_setImage(withURL: URL(string: profileImageUrlString)!)
         
-        let bannerURL = "https://api.twitter.com/1.1/users/profile_banner.json"
-        var bannerImageUrlString = ""
-        let userId = self.userInfo["id"] as! Int
-        TwitterAPICaller.client?.getDictionaryRequest(url: bannerURL, parameters: ["user_id": userId], success: { UserInfo in
-            self.userBannerUrls = UserInfo
-            bannerImageUrlString = ((UserInfo["sizes"] as! NSDictionary)["mobile_retina"] as! NSDictionary)["url"] as! String
-            self.bannerImageView.af_setImage(withURL: URL(string: bannerImageUrlString)!)
-        }, failure: { error in
-            print("Error grabbing banner profile image: \(error)")
-        })
+        configureBanner()
         
         let dateString = (userInfo["created_at"] as! String)
         let dateFormatter = DateFormatter()
@@ -149,58 +140,37 @@ class ProfileViewController: UIViewController, UITableViewDelegate, UITableViewD
         
         var profileImageUrlString = user["profile_image_url"] as! String
         profileImageUrlString = profileImageUrlString.replacingOccurrences(of: "normal", with: "bigger")
-        
         let profileImageURL = URL(string: profileImageUrlString)!
-        var tweetContent = (tweetArray[indexPath.row]["text"] as! String)
-        let extended_entities = (tweetArray[indexPath.row]["extended_entities"] as? NSDictionary )
-        let mediaObject = extended_entities?["media"] as? NSArray
-        if (mediaObject != nil) {
-            let mediaUrlString = (mediaObject?[0] as? NSDictionary)?["media_url_https"]
-            if (mediaUrlString != nil) {
-
-                var moddedString = (mediaUrlString as! String).replacingOccurrences(of: ".jpg", with: "")
-                moddedString = moddedString + "?format=jpg&name=small"
-                let mediaURL = URL(string: moddedString)
-                
-                cell.mediaImageView.af_setImage(withURL: mediaURL!)
-                cell.mediaImageView.layer.borderWidth = 3.0
-                cell.mediaImageView.layer.masksToBounds = false
-                cell.mediaImageView.layer.borderColor = #colorLiteral(red: 0, green: 0.6784657836, blue: 0.9941992164, alpha: 1)
-                cell.mediaImageView.layer.cornerRadius = 10.0 //cell.profileImageView.frame.size.width/2
-                cell.mediaImageView.clipsToBounds = true
-            }
-        } else {
-            cell.mediaImageView.image = nil
-        }
-
-        
-        tweetContent = tweetContent.replacingOccurrences(of: "&amp;", with: "&")
-        
-        cell.profileImageView.af_setImage(withURL: profileImageURL)
-        
-        cell.retweetCountLabel.text = String(tweetArray[indexPath.row]["retweet_count"] as! Int)
-        cell.favoriteCountLabel.text = String(tweetArray[indexPath.row]["favorite_count"] as! Int)
-        cell.screenNameLabel.text = "@" + (user["screen_name"] as! String)
-        cell.userNameLabel.text = user["name"] as? String
-        cell.tweetContent.text = tweetContent
-        
         // Make the image circular
+        cell.profileImageView.af_setImage(withURL: profileImageURL)
         cell.profileImageView.layer.borderWidth = 2.0
         cell.profileImageView.layer.masksToBounds = false
         cell.profileImageView.layer.borderColor = #colorLiteral(red: 0, green: 0.6784657836, blue: 0.9941992164, alpha: 1)
         cell.profileImageView.layer.cornerRadius = cell.profileImageView.frame.size.width/2
         cell.profileImageView.clipsToBounds = true
         
+        configureEmbeddedMediaView(for: cell, at: indexPath)
+        
+        cell.tweetId = tweetArray[indexPath.row]["id"] as! Int
+        cell.retweetCountLabel.text = String(tweetArray[indexPath.row]["retweet_count"] as! Int)
+        cell.retweeted = tweetArray[indexPath.row]["retweeted"] as! Bool
+        cell.setRetweeted(tweetArray[indexPath.row]["retweeted"] as! Bool)
+        cell.favoriteCountLabel.text = String(tweetArray[indexPath.row]["favorite_count"] as! Int)
+        cell.setFavorite(tweetArray[indexPath.row]["favorited"] as! Bool)
+        
+        cell.screenNameLabel.text = "@" + (user["screen_name"] as! String)
+        cell.userNameLabel.text = user["name"] as? String
+        
+        // Formatting relative tweet timestamp
         let createdDate = createDate(from: (tweetArray[indexPath.row]["created_at"] as? String)!)
         let formatter = RelativeDateTimeFormatter()
         formatter.dateTimeStyle = .named
-        
         cell.timestampLabel.text = formatter.localizedString(for: createdDate, relativeTo: Date())
-        cell.tweetId = tweetArray[indexPath.row]["id"] as! Int
-        cell.retweeted = tweetArray[indexPath.row]["retweeted"] as! Bool
-        cell.setRetweeted(tweetArray[indexPath.row]["retweeted"] as! Bool)
-        cell.setFavorite(tweetArray[indexPath.row]["favorited"] as! Bool)
         
+    
+        var tweetContent = (tweetArray[indexPath.row]["text"] as! String)
+        tweetContent = tweetContent.replacingOccurrences(of: "&amp;", with: "&")
+        cell.tweetContent.text = tweetContent
         
         return cell
     }
@@ -221,6 +191,42 @@ class ProfileViewController: UIViewController, UITableViewDelegate, UITableViewD
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         return tweetArray.count
+    }
+    
+    private func configureBanner () {
+        let bannerEndpoint = "https://api.twitter.com/1.1/users/profile_banner.json"
+        var bannerImageUrlString = ""
+        let userId = self.userInfo["id"] as! Int
+        TwitterAPICaller.client?.getDictionaryRequest(url: bannerEndpoint, parameters: ["user_id": userId], success: { UserInfo in
+            self.userBannerUrls = UserInfo
+            bannerImageUrlString = ((UserInfo["sizes"] as! NSDictionary)["mobile_retina"] as! NSDictionary)["url"] as! String
+            self.bannerImageView.af_setImage(withURL: URL(string: bannerImageUrlString)!)
+        }, failure: { error in
+            print("Error grabbing banner profile image: \(error)")
+        })
+    }
+    
+    private func configureEmbeddedMediaView (for cell: TweetCell, at indexPath: IndexPath) {
+        let extended_entities = (tweetArray[indexPath.row]["extended_entities"] as? NSDictionary )
+        let mediaObject = extended_entities?["media"] as? NSArray
+        if (mediaObject != nil) {
+            let mediaUrlString = (mediaObject?[0] as? NSDictionary)?["media_url_https"]
+            if (mediaUrlString != nil) {
+
+                var moddedString = (mediaUrlString as! String).replacingOccurrences(of: ".jpg", with: "")
+                moddedString = moddedString + "?format=jpg&name=small"
+                let mediaURL = URL(string: moddedString)
+                
+                cell.mediaImageView.af_setImage(withURL: mediaURL!)
+                cell.mediaImageView.layer.borderWidth = 3.0
+                cell.mediaImageView.layer.masksToBounds = false
+                cell.mediaImageView.layer.borderColor = #colorLiteral(red: 0, green: 0.6784657836, blue: 0.9941992164, alpha: 1)
+                cell.mediaImageView.layer.cornerRadius = 10.0
+                cell.mediaImageView.clipsToBounds = true
+            }
+        } else {
+            cell.mediaImageView.image = nil
+        }
     }
 }
 

@@ -10,14 +10,12 @@ import UIKit
 import AlamofireImage
 
 class HomeTableTableViewController: UITableViewController {
-    
-    var tweetArray = [NSDictionary]()
-    var userInfo = NSDictionary()
-    var userBanner = NSDictionary()
-    var numberOfTweets = 0
-    
-    
-    let myRefreshControl = UIRefreshControl()
+    private var tweetArray = [NSDictionary]()
+    private var userInfo = NSDictionary()
+    private var userBanner = NSDictionary()
+    private var numberOfTweets = 0
+    private let myRefreshControl = UIRefreshControl()
+    private let profileURL = "https://api.twitter.com/1.1/account/verify_credentials.json"
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -34,35 +32,18 @@ class HomeTableTableViewController: UITableViewController {
         
         myRefreshControl.addTarget(self, action: #selector(loadTweets), for: .valueChanged)
         tableView.refreshControl = myRefreshControl
-        
-        
    }
    
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         loadTweets()
-        
-        // Grabbing userInfo for later call
-        let profileURL = "https://api.twitter.com/1.1/account/verify_credentials.json"
-        TwitterAPICaller.client?.getDictionaryRequest(url: profileURL, parameters: [:], success: { UserInfo in
-            self.userInfo = UserInfo
-            // Passing userInfo to adjacent tab view controller
-            // I don't think this is a good practice for doing so but it works for now
-            let secondTab = self.tabBarController?.viewControllers?[1] as! UINavigationController
-            let secondController = secondTab.topViewController as! ProfileViewController
-            secondController.userInfo = UserInfo
-        }, failure: { error in
-            print("Error grabbing user profile image: \(error)")
-        })
-        
-        
+        loadUserInfo()
     }
     
     @objc func loadTweets() {
         let homeTimelineEndpoint = "https://api.twitter.com/1.1/statuses/home_timeline.json"
         let myParams = ["count": 20]
         TwitterAPICaller.client?.getDictionariesRequest(url: homeTimelineEndpoint, parameters: myParams, success: { tweets in
-            
             self.tweetArray.removeAll()
             for tweet in tweets {
                 self.tweetArray.append(tweet)
@@ -75,7 +56,21 @@ class HomeTableTableViewController: UITableViewController {
         })
     }
     
-    func loadMoreTweets() {
+    private func loadUserInfo () {
+        TwitterAPICaller.client?.getDictionaryRequest(url: profileURL, parameters: [:], success: { UserInfo in
+            self.userInfo = UserInfo
+            // Passing userInfo to adjacent tab view controller
+            // I don't think this is a good practice for doing so but it works for now
+            let secondTab = self.tabBarController?.viewControllers?[1] as! UINavigationController
+            let secondController = secondTab.topViewController as! ProfileViewController
+            secondController.userInfo = UserInfo
+        }, failure: { error in
+            print("Error grabbing user profile image: \(error)")
+        })
+        
+    }
+    
+    private func loadMoreTweets () {
         
         let myURL = "https://api.twitter.com/1.1/statuses/home_timeline.json"
         numberOfTweets = numberOfTweets + 20
@@ -108,9 +103,65 @@ class HomeTableTableViewController: UITableViewController {
         
         var profileImageUrlString = user["profile_image_url"] as! String
         profileImageUrlString = profileImageUrlString.replacingOccurrences(of: "normal", with: "bigger")
-        
         let profileImageURL = URL(string: profileImageUrlString)!
+        // Make the image circular
+        cell.profileImageView.af_setImage(withURL: profileImageURL)
+        cell.profileImageView.layer.borderWidth = 2.0
+        cell.profileImageView.layer.masksToBounds = false
+        cell.profileImageView.layer.borderColor = #colorLiteral(red: 0, green: 0.6784657836, blue: 0.9941992164, alpha: 1)
+        cell.profileImageView.layer.cornerRadius = cell.profileImageView.frame.size.width/2
+        cell.profileImageView.clipsToBounds = true
+        
+        configureEmbeddedMediaView(for: cell, at: indexPath)
+        
+        cell.tweetId = tweetArray[indexPath.row]["id"] as! Int
+        cell.retweetCountLabel.text = String(tweetArray[indexPath.row]["retweet_count"] as! Int)
+        cell.retweeted = tweetArray[indexPath.row]["retweeted"] as! Bool
+        cell.setRetweeted(tweetArray[indexPath.row]["retweeted"] as! Bool)
+        cell.favoriteCountLabel.text = String(tweetArray[indexPath.row]["favorite_count"] as! Int)
+        cell.setFavorite(tweetArray[indexPath.row]["favorited"] as! Bool)
+        
+        cell.screenNameLabel.text = "@" + (user["screen_name"] as! String)
+        cell.userNameLabel.text = user["name"] as? String
+        
+        // Formatting relative tweet timestamp
+        let createdDate = createDate(from: (tweetArray[indexPath.row]["created_at"] as? String)!)
+        let formatter = RelativeDateTimeFormatter()
+        formatter.dateTimeStyle = .named
+        cell.timestampLabel.text = formatter.localizedString(for: createdDate, relativeTo: Date())
+        
+    
         var tweetContent = (tweetArray[indexPath.row]["text"] as! String)
+        tweetContent = tweetContent.replacingOccurrences(of: "&amp;", with: "&")
+        cell.tweetContent.text = tweetContent
+        
+        return cell
+    }
+    
+    @IBAction func onLogout(_ sender: Any) {
+        TwitterAPICaller.client?.logout()
+        UserDefaults.standard.set(false, forKey: "userLoggedIn")
+        self.dismiss(animated: true, completion: nil)
+        
+    }
+
+    override func numberOfSections(in tableView: UITableView) -> Int {
+        return 1
+    }
+
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        return tweetArray.count
+    }
+    
+    private func createDate (from formattedString: String) -> Date {
+        let dateFormatter = DateFormatter()
+        dateFormatter.timeZone = NSTimeZone(name: "UTC") as TimeZone?
+        dateFormatter.dateFormat = "EEE MMM dd HH:mm:ss Z yyyy"
+        
+        return dateFormatter.date(from: formattedString )!
+    }
+    
+    private func configureEmbeddedMediaView (for cell: TweetCell, at indexPath: IndexPath) {
         let extended_entities = (tweetArray[indexPath.row]["extended_entities"] as? NSDictionary )
         let mediaObject = extended_entities?["media"] as? NSArray
         if (mediaObject != nil) {
@@ -131,65 +182,6 @@ class HomeTableTableViewController: UITableViewController {
         } else {
             cell.mediaImageView.image = nil
         }
-
-        
-        tweetContent = tweetContent.replacingOccurrences(of: "&amp;", with: "&")
-        
-        cell.profileImageView.af_setImage(withURL: profileImageURL)
-        
-        cell.retweetCountLabel.text = String(tweetArray[indexPath.row]["retweet_count"] as! Int)
-        cell.favoriteCountLabel.text = String(tweetArray[indexPath.row]["favorite_count"] as! Int)
-        cell.screenNameLabel.text = "@" + (user["screen_name"] as! String)
-        cell.userNameLabel.text = user["name"] as? String
-        cell.tweetContent.text = tweetContent
-        
-        // Make the image circular
-        cell.profileImageView.layer.borderWidth = 2.0
-        cell.profileImageView.layer.masksToBounds = false
-        cell.profileImageView.layer.borderColor = #colorLiteral(red: 0, green: 0.6784657836, blue: 0.9941992164, alpha: 1)
-        cell.profileImageView.layer.cornerRadius = cell.profileImageView.frame.size.width/2
-        cell.profileImageView.clipsToBounds = true
-        
-        // Grabbing and formatting timestamp
-        let createdDate = createDate(from: (tweetArray[indexPath.row]["created_at"] as? String)!)
-        let formatter = RelativeDateTimeFormatter()
-        formatter.dateTimeStyle = .named
-        
-        cell.timestampLabel.text = formatter.localizedString(for: createdDate, relativeTo: Date())
-        cell.tweetId = tweetArray[indexPath.row]["id"] as! Int
-        cell.retweeted = tweetArray[indexPath.row]["retweeted"] as! Bool
-        cell.setRetweeted(tweetArray[indexPath.row]["retweeted"] as! Bool)
-        cell.setFavorite(tweetArray[indexPath.row]["favorited"] as! Bool)
-        
-        
-        return cell
-    }
-    
-    
-    func createDate (from formattedString: String) -> Date {
-        
-        let dateFormatter = DateFormatter()
-        dateFormatter.timeZone = NSTimeZone(name: "UTC") as TimeZone?
-        dateFormatter.dateFormat = "EEE MMM dd HH:mm:ss Z yyyy"
-        
-        return dateFormatter.date(from: formattedString )!
-    }
-    
-    @IBAction func onLogout(_ sender: Any) {
-        TwitterAPICaller.client?.logout()
-        UserDefaults.standard.set(false, forKey: "userLoggedIn")
-        self.dismiss(animated: true, completion: nil)
-        
-    }
-    
-    // MARK: - Table view data source
-
-    override func numberOfSections(in tableView: UITableView) -> Int {
-        return 1
-    }
-
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return tweetArray.count
     }
 
 }
